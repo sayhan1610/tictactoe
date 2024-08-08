@@ -1,7 +1,8 @@
 import pygame
 import sys
 import numpy as np
-import time
+import random
+import time  # For delay
 
 pygame.init()
 
@@ -18,6 +19,8 @@ CROSS_WIDTH = 25
 SPACE = SQUARE_SIZE // 4
 FONT = pygame.font.SysFont(None, 60)
 ICON_SIZE = 30
+BUTTON_WIDTH, BUTTON_HEIGHT = 300, 60
+CPU_MOVE_DELAY = 500  # Delay in milliseconds for CPU moves
 
 # Colors
 BG_COLOR = (0, 0, 0)          # Black
@@ -28,6 +31,7 @@ WIN_COLOR = (255, 255, 0)      # Yellow
 TEXT_COLOR = (255, 255, 255)   # White
 BUTTON_COLOR = (128, 128, 128) # Gray
 BUTTON_HOVER_COLOR = (170, 170, 170) # Lighter Gray
+BUTTON_BORDER_COLOR = (255, 255, 255) # White
 
 # Initialize screen
 screen = pygame.display.set_mode((WIDTH, HEIGHT + 100))
@@ -41,11 +45,21 @@ board = np.zeros((BOARD_ROWS, BOARD_COLS))
 reload_icon = pygame.image.load("reload_icon.png")  # Replace with the path to your reload icon
 reload_icon = pygame.transform.scale(reload_icon, (ICON_SIZE, ICON_SIZE))
 
+# Load sounds
+bg_music = pygame.mixer.Sound('audio/bg_music.mp3')
+game_start_sound = pygame.mixer.Sound('audio/game_start.mp3')
+game_win_sound = pygame.mixer.Sound('audio/game_win.mp3')
+move_sounds = [pygame.mixer.Sound(f'audio/move{i}.mp3') for i in range(1, 5)]
+
+# Play background music
+bg_music.play(loops=-1)
+
 # Game states
 HOME = "home"
 INSTRUCTIONS = "instructions"
 GAME = "game"
 game_state = HOME
+cpu_mode = False
 
 # Functions for the game
 def draw_lines():
@@ -133,14 +147,12 @@ def draw_restart_button(turn_label_width):
 def draw_home_page():
     screen.fill(BG_COLOR)
     title = FONT.render("Tic Tac Toe", True, TEXT_COLOR)
-    start_button = FONT.render("Start Game", True, TEXT_COLOR)
-    instructions_button = FONT.render("Instructions", True, TEXT_COLOR)
+    pvp_button = draw_button("Player vs Player", HEIGHT // 2 - 50)
+    pvcpu_button = draw_button("Player vs CPU", HEIGHT // 2)
+    instructions_button = draw_button("Instructions", HEIGHT // 2 + 100)
     
     screen.blit(title, (WIDTH // 2 - title.get_width() // 2, HEIGHT // 4))
-    screen.blit(start_button, (WIDTH // 2 - start_button.get_width() // 2, HEIGHT // 2))
-    screen.blit(instructions_button, (WIDTH // 2 - instructions_button.get_width() // 2, HEIGHT // 2 + 100))
-    
-    return start_button.get_rect(center=(WIDTH // 2, HEIGHT // 2)), instructions_button.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 100))
+    return (pvp_button, pvcpu_button, instructions_button)
 
 def draw_instructions_page():
     screen.fill(BG_COLOR)
@@ -160,6 +172,76 @@ def draw_instructions_page():
         screen.blit(instruction_text, (WIDTH // 2 - instruction_text.get_width() // 2, y_offset))
         y_offset += 50
 
+def draw_button(text, y_position):
+    button_rect = pygame.Rect(WIDTH // 2 - BUTTON_WIDTH // 2, y_position, BUTTON_WIDTH, BUTTON_HEIGHT)
+    pygame.draw.rect(screen, BUTTON_COLOR, button_rect)
+    pygame.draw.rect(screen, BUTTON_BORDER_COLOR, button_rect, 3)
+    button_text = FONT.render(text, True, TEXT_COLOR)
+    screen.blit(button_text, (button_rect.x + (BUTTON_WIDTH - button_text.get_width()) // 2, button_rect.y + (BUTTON_HEIGHT - button_text.get_height()) // 2))
+    return button_rect
+
+def minimax(board, depth, alpha, beta, is_maximizing):
+    if check_win(2):
+        return 1
+    elif check_win(1):
+        return -1
+    elif is_board_full():
+        return 0
+
+    if is_maximizing:
+        max_eval = -np.inf
+        for row in range(BOARD_ROWS):
+            for col in range(BOARD_COLS):
+                if board[row][col] == 0:
+                    board[row][col] = 2
+                    eval = minimax(board, depth + 1, alpha, beta, False)
+                    board[row][col] = 0
+                    max_eval = max(max_eval, eval)
+                    alpha = max(alpha, eval)
+                    if beta <= alpha:
+                        break
+        return max_eval
+    else:
+        min_eval = np.inf
+        for row in range(BOARD_ROWS):
+            for col in range(BOARD_COLS):
+                if board[row][col] == 0:
+                    board[row][col] = 1
+                    eval = minimax(board, depth + 1, alpha, beta, True)
+                    board[row][col] = 0
+                    min_eval = min(min_eval, eval)
+                    beta = min(beta, eval)
+                    if beta <= alpha:
+                        break
+        return min_eval
+
+def ai_move():
+    best_score = -np.inf
+    best_move = None
+    for row in range(BOARD_ROWS):
+        for col in range(BOARD_COLS):
+            if board[row][col] == 0:
+                board[row][col] = 2
+                score = minimax(board, 0, -np.inf, np.inf, False)
+                board[row][col] = 0
+                if score > best_score:
+                    best_score = score
+                    best_move = (row, col)
+    if best_move:
+        mark_square(best_move[0], best_move[1], 2)
+        random.choice(move_sounds).play()
+        draw_figures()
+        if check_win(2):
+            game_win_sound.play()
+            pygame.display.update()  # Update the display to show the win line
+            return True
+        if is_board_full():
+            return True
+        # Add a delay to make the CPU move more noticeable
+        pygame.display.update()
+        time.sleep(CPU_MOVE_DELAY / 1000)
+    return False
+
 draw_lines()
 
 # Variables
@@ -169,7 +251,7 @@ game_over = False
 # Main loop
 while True:
     if game_state == HOME:
-        start_button_rect, instructions_button_rect = draw_home_page()
+        pvp_button_rect, pvcpu_button_rect, instructions_button_rect = draw_home_page()
     elif game_state == INSTRUCTIONS:
         draw_instructions_page()
     elif game_state == GAME:
@@ -183,8 +265,15 @@ while True:
 
         if game_state == HOME:
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if start_button_rect.collidepoint(event.pos):
+                if pvp_button_rect.collidepoint(event.pos):
+                    game_start_sound.play()
                     game_state = GAME
+                    cpu_mode = False
+                    restart()
+                elif pvcpu_button_rect.collidepoint(event.pos):
+                    game_start_sound.play()
+                    game_state = GAME
+                    cpu_mode = True
                     restart()
                 elif instructions_button_rect.collidepoint(event.pos):
                     game_state = INSTRUCTIONS
@@ -203,14 +292,16 @@ while True:
                     game_state = GAME
                     game_over = False
 
-                if not game_over:
+                if not game_over and not (cpu_mode and player == 2):
                     clicked_row = mouseY // SQUARE_SIZE
                     clicked_col = mouseX // SQUARE_SIZE
 
                     if clicked_row < BOARD_ROWS and available_square(clicked_row, clicked_col):
                         mark_square(clicked_row, clicked_col, player)
+                        random.choice(move_sounds).play()
                         draw_figures()
                         if check_win(player):
+                            game_win_sound.play()
                             pygame.display.update()  # Update the display to show the win line
                             game_over = True
                         elif is_board_full():
@@ -231,5 +322,12 @@ while True:
             if restart_button.collidepoint(pygame.mouse.get_pos()):
                 pygame.draw.rect(screen, BUTTON_HOVER_COLOR, restart_button)
                 screen.blit(reload_icon, (restart_button.x, restart_button.y))
+
+            # CPU move logic
+            if cpu_mode and player == 2 and not game_over:
+                if ai_move():
+                    game_over = True
+                else:
+                    player = 1
 
     pygame.display.update()
