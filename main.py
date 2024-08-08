@@ -92,26 +92,18 @@ def draw_asc_diagonal(player):
 def draw_desc_diagonal(player):
     pygame.draw.line(screen, WIN_COLOR, (15, 15), (WIDTH - 15, HEIGHT - 15), WIN_LINE_WIDTH)
 
-def draw_turn_label(player):
-    turn_text = "Player 1's (O) Turn" if player == 1 else "Player 2's (X) Turn"
+def draw_turn_label(player, game_over):
+    if game_over:
+        if player == 0:
+            turn_text = "It's a Tie!"
+        else:
+            turn_text = f"Player {player} Wins!"
+    else:
+        turn_text = "Player 1's (O) Turn" if player == 1 else "Player 2's (X) Turn"
+    
     label = FONT.render(turn_text, True, TEXT_COLOR)
     screen.fill(BG_COLOR, (0, HEIGHT, WIDTH, 100))  # Clear previous label
     screen.blit(label, (WIDTH // 2 - label.get_width() // 2, HEIGHT + 20))
-
-def draw_winner(player):
-    if player == 0:
-        win_text = "It's a Tie!"
-    else:
-        win_text = f"Player {player} Wins!"
-    label = FONT.render(win_text, True, WIN_COLOR)
-    screen.fill(BG_COLOR, (0, HEIGHT, WIDTH, 100))
-    screen.blit(label, (WIDTH // 2 - label.get_width() // 2, HEIGHT + 20))
-
-def show_end_screen(player):
-    screen.fill(BG_COLOR)
-    draw_winner(player)
-    pygame.display.update()
-    time.sleep(3)
 
 def restart():
     screen.fill(BG_COLOR)
@@ -123,11 +115,10 @@ draw_lines()
 # Variables
 player = 1
 game_over = False
-end_game = False
 
 # Main loop
 while True:
-    draw_turn_label(player)
+    draw_turn_label(player, game_over)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
@@ -144,11 +135,11 @@ while True:
                 mark_square(clicked_row, clicked_col, player)
                 draw_figures()
                 if check_win(player):
+                    pygame.display.update()  # Update the display to show the win line
                     game_over = True
-                    show_end_screen(player)
                 elif is_board_full():
                     game_over = True
-                    show_end_screen(0)
+                    player = 0  # Use 0 to indicate a tie
                 else:
                     player = 3 - player  # Switch between 1 (O) and 2 (X)
 
