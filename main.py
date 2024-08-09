@@ -24,18 +24,18 @@ CPU_MOVE_DELAY = 50  # Delay in milliseconds for CPU moves
 
 # Default Settings
 sound_on = True
-theme_color = (0, 0, 0)          # Default Black
+theme_color = (0, 0, 0)  # Default Black
 
 # Colors
 BG_COLOR = (0, 0, 0)  # Default Background Color (Black)
-LINE_COLOR = (255, 255, 255)     # White
-CIRCLE_COLOR = (255, 182, 193)   # Baby Pink
-CROSS_COLOR = (0, 255, 255)      # Cyan
-WIN_COLOR = (255, 255, 0)        # Yellow
-TEXT_COLOR = (255, 255, 255)     # White
-BUTTON_COLOR = (128, 128, 128)   # Gray
+LINE_COLOR = (255, 255, 255)  # White
+CIRCLE_COLOR = (255, 182, 193)  # Baby Pink
+CROSS_COLOR = (0, 255, 255)  # Cyan
+WIN_COLOR = (255, 255, 0)  # Yellow
+TEXT_COLOR = (255, 255, 255)  # White
+BUTTON_COLOR = (128, 128, 128)  # Gray
 BUTTON_HOVER_COLOR = (170, 170, 170)  # Lighter Gray
-BUTTON_BORDER_COLOR = (255, 255, 255) # White
+BUTTON_BORDER_COLOR = (255, 255, 255)  # White
 
 # Initialize screen
 screen = pygame.display.set_mode((WIDTH, HEIGHT + 100))
@@ -52,7 +52,8 @@ game_win_sound = pygame.mixer.Sound('audio/game_win.mp3')
 move_sounds = [pygame.mixer.Sound(f'audio/move{i}.mp3') for i in range(1, 5)]
 
 # Play background music
-bg_music.play(loops=-1) if sound_on else None
+if sound_on:
+    bg_music.play(loops=-1)
 
 # Game states
 HOME = "home"
@@ -67,6 +68,40 @@ winning_lines = []
 
 # Board
 board = np.zeros((BOARD_ROWS, BOARD_COLS))
+
+# Particle class
+class Particle:
+    def __init__(self, x, y, color, speed, angle):
+        self.x = x
+        self.y = y
+        self.color = color
+        self.speed = speed
+        self.angle = angle
+        self.life = 100  # Particle life in frames
+
+    def update(self):
+        self.x += self.speed * np.cos(self.angle)
+        self.y += self.speed * np.sin(self.angle)
+        self.life -= 2  # Decrease life
+        self.speed *= 0.95  # Slow down over time
+
+    def draw(self, screen):
+        if self.life > 0:
+            pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), 5)
+
+# Adding the particle effect on victory
+def create_particles(x, y, color, num_particles=30):
+    particles = []
+    for _ in range(num_particles):
+        angle = random.uniform(0, 2 * np.pi)
+        speed = random.uniform(2, 7)
+        particles.append(Particle(x, y, color, speed, angle))
+    return particles
+
+def update_particles():
+    for particle in particles:
+        particle.update()
+        particle.draw(screen)
 
 # Functions for the game
 def draw_lines():
@@ -125,15 +160,20 @@ def draw_desc_diagonal(player):
     pygame.draw.line(screen, WIN_COLOR, (15, 15), (WIDTH - 15, HEIGHT - 15), WIN_LINE_WIDTH)
 
 def draw_winning_lines():
+    global particles
     for line in winning_lines:
         if line[0] == 'vertical':
             draw_vertical_winning_line(line[1], player)
+            particles = create_particles(line[1] * SQUARE_SIZE + SQUARE_SIZE // 2, HEIGHT // 2, WIN_COLOR)
         elif line[0] == 'horizontal':
             draw_horizontal_winning_line(line[1], player)
+            particles = create_particles(WIDTH // 2, line[1] * SQUARE_SIZE + SQUARE_SIZE // 2, WIN_COLOR)
         elif line == 'desc_diagonal':
             draw_desc_diagonal(player)
+            particles = create_particles(WIDTH // 2, HEIGHT // 2, WIN_COLOR)
         elif line == 'asc_diagonal':
             draw_asc_diagonal(player)
+            particles = create_particles(WIDTH // 2, HEIGHT // 2, WIN_COLOR)
 
 def draw_turn_label(player, game_over):
     if game_over:
@@ -150,11 +190,12 @@ def draw_turn_label(player, game_over):
     return label.get_width() // 2
 
 def restart():
-    global winning_lines
+    global winning_lines, particles
     screen.fill(BG_COLOR)
     draw_lines()
     board.fill(0)
     winning_lines = []
+    particles = []
 
 def draw_restart_button(turn_label_width):
     button_x = (WIDTH // 2) + turn_label_width + 20  # Position it beside the turn label
@@ -162,226 +203,149 @@ def draw_restart_button(turn_label_width):
     screen.blit(reload_icon, (button_x, HEIGHT + 25))
     return button_rect
 
-def draw_home_page():
+def draw_button(text, x, y, width, height, action=None):
+    button_rect = pygame.Rect(x, y, width, height)
+    pygame.draw.rect(screen, BUTTON_COLOR, button_rect)
+    pygame.draw.rect(screen, BUTTON_BORDER_COLOR, button_rect, 3)  # White border
+    label = FONT.render(text, True, TEXT_COLOR)
+    screen.blit(label, (x + (width - label.get_width()) // 2, y + (height - label.get_height()) // 2))
+    return button_rect, action
+
+def draw_home_screen():
     screen.fill(BG_COLOR)
+    pygame.display.set_caption('Tic Tac Toe')
+
+    # Draw game title
     title = FONT.render("Tic Tac Toe", True, TEXT_COLOR)
-    pvp_button = draw_button("Player vs Player", HEIGHT // 2 - 50)
-    pvcpu_button = draw_button("Player vs CPU", HEIGHT // 2)
-    instructions_button = draw_button("Instructions", HEIGHT // 2 + 100)
-    settings_button = draw_button("Settings", HEIGHT // 2 + 150)
-    
-    screen.blit(title, (WIDTH // 2 - title.get_width() // 2, HEIGHT // 4))
-    return (pvp_button, pvcpu_button, instructions_button, settings_button)
+    screen.blit(title, (WIDTH // 2 - title.get_width() // 2, HEIGHT // 4 - title.get_height() // 2))
 
-def draw_instructions_page():
+    # Draw buttons
+    buttons = []
+    buttons.append(draw_button("1 Player", WIDTH // 2 - BUTTON_WIDTH // 2, HEIGHT // 2 - BUTTON_HEIGHT * 1.5, BUTTON_WIDTH, BUTTON_HEIGHT, lambda: start_game(cpu=True)))
+    buttons.append(draw_button("2 Players", WIDTH // 2 - BUTTON_WIDTH // 2, HEIGHT // 2, BUTTON_WIDTH, BUTTON_HEIGHT, lambda: start_game(cpu=False)))
+    buttons.append(draw_button("Instructions", WIDTH // 2 - BUTTON_WIDTH // 2, HEIGHT // 2 + BUTTON_HEIGHT * 2.5, BUTTON_WIDTH, BUTTON_HEIGHT, lambda: switch_state(INSTRUCTIONS)))
+    buttons.append(draw_button("Settings", WIDTH // 2 - BUTTON_WIDTH // 2, HEIGHT // 2 + BUTTON_HEIGHT * 4, BUTTON_WIDTH, BUTTON_HEIGHT, lambda: switch_state(SETTINGS)))
+    
+    pygame.display.update()
+    return buttons
+
+def draw_instructions_screen():
     screen.fill(BG_COLOR)
-    instructions = [
-        "Instructions:",
-        "1. The game is played on a 3x3 grid.",
-        "2. Player 1 is O and Player 2 is X.",
-        "3. Players take turns to place their mark on the grid.",
-        "4. The first player to get 3 marks in a row wins!",
-        "5. Rows, columns, and diagonals count.",
-        "Press 'H' to go back to the Home page."
-    ]
-    
-    y_offset = 50
-    for line in instructions:
-        instruction_text = FONT.render(line, True, TEXT_COLOR)
-        screen.blit(instruction_text, (WIDTH // 2 - instruction_text.get_width() // 2, y_offset))
-        y_offset += 50
+    title = FONT.render("Instructions", True, TEXT_COLOR)
+    screen.blit(title, (WIDTH // 2 - title.get_width() // 2, HEIGHT // 4 - title.get_height() // 2))
 
-def draw_settings_page():
+    instructions = [
+        "1. The game is played on a 3x3 grid.",
+        "2. Player 1 is O and Player 2 (or CPU) is X.",
+        "3. The first player to align 3 symbols vertically, horizontally,",
+        "   or diagonally wins the game.",
+        "4. If all 9 squares are filled without a winner, it's a tie."
+    ]
+
+    for i, line in enumerate(instructions):
+        label = FONT.render(line, True, TEXT_COLOR)
+        screen.blit(label, (WIDTH // 2 - label.get_width() // 2, HEIGHT // 2 - 50 + i * 40))
+
+    buttons = []
+    buttons.append(draw_button("Back", WIDTH // 2 - BUTTON_WIDTH // 2, HEIGHT // 2 + 100, BUTTON_WIDTH, BUTTON_HEIGHT, lambda: switch_state(HOME)))
+    
+    pygame.display.update()
+    return buttons
+
+def draw_settings_screen():
     screen.fill(BG_COLOR)
     title = FONT.render("Settings", True, TEXT_COLOR)
-    sound_button = draw_button("Sound: On" if sound_on else "Sound: Off", HEIGHT // 2 - 50)
-    theme_button = draw_button("Change Theme", HEIGHT // 2)
-    back_button = draw_button("Back", HEIGHT // 2 + 100)
+    screen.blit(title, (WIDTH // 2 - title.get_width() // 2, HEIGHT // 4 - title.get_height() // 2))
+
+    settings = [
+        "Toggle Sound",
+        "Change Theme Color"
+    ]
+
+    buttons = []
+    for i, setting in enumerate(settings):
+        buttons.append(draw_button(setting, WIDTH // 2 - BUTTON_WIDTH // 2, HEIGHT // 2 - 50 + i * 100, BUTTON_WIDTH, BUTTON_HEIGHT, None))
+
+    buttons.append(draw_button("Back", WIDTH // 2 - BUTTON_WIDTH // 2, HEIGHT // 2 + 200, BUTTON_WIDTH, BUTTON_HEIGHT, lambda: switch_state(HOME)))
     
-    screen.blit(title, (WIDTH // 2 - title.get_width() // 2, HEIGHT // 4))
-    return (sound_button, theme_button, back_button)
+    pygame.display.update()
+    return buttons
 
-def draw_button(text, y_position):
-    button_rect = pygame.Rect(WIDTH // 2 - BUTTON_WIDTH // 2, y_position, BUTTON_WIDTH, BUTTON_HEIGHT)
-    pygame.draw.rect(screen, BUTTON_COLOR, button_rect)
-    pygame.draw.rect(screen, BUTTON_BORDER_COLOR, button_rect, 2)
-    button_text = FONT.render(text, True, TEXT_COLOR)
-    screen.blit(button_text, (button_rect.x + BUTTON_WIDTH // 2 - button_text.get_width() // 2, button_rect.y + BUTTON_HEIGHT // 2 - button_text.get_height() // 2))
-    return button_rect
+def switch_state(state):
+    global game_state
+    game_state = state
+    if game_state == HOME:
+        draw_home_screen()
+    elif game_state == INSTRUCTIONS:
+        draw_instructions_screen()
+    elif game_state == SETTINGS:
+        draw_settings_screen()
+    elif game_state == GAME:
+        restart()  # Start a new game
 
-def minimax(board, depth, alpha, beta, maximizing_player):
-    if check_win(2):
-        return 1
-    elif check_win(1):
-        return -1
-    elif is_board_full():
-        return 0
-
-    if maximizing_player:
-        max_eval = -np.inf
-        for row in range(BOARD_ROWS):
-            for col in range(BOARD_COLS):
-                if available_square(row, col):
-                    board[row][col] = 2
-                    eval = minimax(board, depth + 1, alpha, beta, False)
-                    board[row][col] = 0
-                    max_eval = max(max_eval, eval)
-                    alpha = max(alpha, eval)
-                    if beta <= alpha:
-                        break
-        return max_eval
-    else:
-        min_eval = np.inf
-        for row in range(BOARD_ROWS):
-            for col in range(BOARD_COLS):
-                if available_square(row, col):
-                    board[row][col] = 1
-                    eval = minimax(board, depth + 1, alpha, beta, True)
-                    board[row][col] = 0
-                    min_eval = min(min_eval, eval)
-                    beta = min(beta, eval)
-                    if beta <= alpha:
-                        break
-        return min_eval
-
-def ai_move():
-    best_move = None
-    best_value = -np.inf
-    for row in range(BOARD_ROWS):
-        for col in range(BOARD_COLS):
-            if available_square(row, col):
-                board[row][col] = 2
-                move_value = minimax(board, 0, -np.inf, np.inf, False)
-                board[row][col] = 0
-                if move_value > best_value:
-                    best_value = move_value
-                    best_move = (row, col)
-
-    if best_move:
-        mark_square(best_move[0], best_move[1], 2)
-        if sound_on:
-            random.choice(move_sounds).play()
-        draw_figures()
-        time.sleep(CPU_MOVE_DELAY)
-        return check_win(2)
-    return False
+def start_game(cpu):
+    global cpu_mode, player, game_over
+    cpu_mode = cpu
+    player = 1
+    game_over = False
+    switch_state(GAME)
+    pygame.mixer.Sound.play(game_start_sound) if sound_on else None
 
 # Main loop
 player = 1
 game_over = False
-while True:
-    if game_state == HOME:
-        pvp_button_rect, pvcpu_button_rect, instructions_button_rect, settings_button_rect = draw_home_page()
-    elif game_state == INSTRUCTIONS:
-        draw_instructions_page()
-    elif game_state == SETTINGS:
-        sound_button_rect, theme_button_rect, back_button_rect = draw_settings_page()
-    elif game_state == GAME:
-        turn_label_width = draw_turn_label(player, game_over)
-        restart_button = draw_restart_button(turn_label_width)
-    
+particles = []
+buttons = draw_home_screen()
+running = True
+
+while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
-
-        if game_state == HOME:
+            running = False
+        if game_state == HOME or game_state == INSTRUCTIONS or game_state == SETTINGS:
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if pvp_button_rect.collidepoint(event.pos):
-                    game_start_sound.play() if sound_on else None
-                    game_state = GAME
-                    cpu_mode = False
-                    restart()
-                elif pvcpu_button_rect.collidepoint(event.pos):
-                    game_start_sound.play() if sound_on else None
-                    game_state = GAME
-                    cpu_mode = True
-                    restart()
-                elif instructions_button_rect.collidepoint(event.pos):
-                    game_state = INSTRUCTIONS
-                elif settings_button_rect.collidepoint(event.pos):
-                    game_state = SETTINGS
-
-        elif game_state == INSTRUCTIONS:
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_h:
-                game_state = HOME
-
-        elif game_state == SETTINGS:
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if sound_button_rect.collidepoint(event.pos):
-                    sound_on = not sound_on
-                    if sound_on:
-                        bg_music.play(loops=-1)
-                    else:
-                        bg_music.stop()
-                elif theme_button_rect.collidepoint(event.pos):
-                    # Change theme colors
-                    if BG_COLOR == (0, 0, 0):
-                        BG_COLOR = (255, 255, 255)  # White
-                        LINE_COLOR = (0, 0, 0)      # Black
-                        CIRCLE_COLOR = (0, 0, 255)  # Blue
-                        CROSS_COLOR = (255, 0, 0)   # Red
-                        WIN_COLOR = (0, 255, 0)     # Green
-                    else:
-                        BG_COLOR = (0, 0, 0)        # Black
-                        LINE_COLOR = (255, 255, 255) # White
-                        CIRCLE_COLOR = (255, 182, 193) # Baby Pink
-                        CROSS_COLOR = (0, 255, 255) # Cyan
-                        WIN_COLOR = (255, 255, 0)   # Yellow
-                elif back_button_rect.collidepoint(event.pos):
-                    game_state = HOME
-
+                for button_rect, action in buttons:
+                    if button_rect.collidepoint(event.pos) and action:
+                        action()
         elif game_state == GAME:
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                mouseX, mouseY = event.pos
-                
-                if restart_button.collidepoint(mouseX, mouseY):
-                    restart()
-                    player = 1
-                    game_state = GAME
-                    game_over = False
+            if event.type == pygame.MOUSEBUTTONDOWN and not game_over:
+                mouseX = event.pos[0]
+                mouseY = event.pos[1]
 
-                if not game_over and not (cpu_mode and player == 2):
-                    clicked_row = mouseY // SQUARE_SIZE
-                    clicked_col = mouseX // SQUARE_SIZE
+                clicked_row = int(mouseY // SQUARE_SIZE)
+                clicked_col = int(mouseX // SQUARE_SIZE)
 
-                    if clicked_row < BOARD_ROWS and available_square(clicked_row, clicked_col):
-                        mark_square(clicked_row, clicked_col, player)
-                        if sound_on:
-                            random.choice(move_sounds).play()
-                        draw_figures()
-                        if check_win(player):
-                            game_win_sound.play() if sound_on else None
-                            pygame.display.update()  # Update the display to show the win line
-                            game_over = True
-                        elif is_board_full():
-                            game_over = True
-                            player = 0  # Use 0 to indicate a tie
-                        else:
-                            player = 3 - player  # Switch between 1 (O) and 2 (X)
+                if available_square(clicked_row, clicked_col):
+                    mark_square(clicked_row, clicked_col, player)
+                    draw_figures()
+                    if check_win(player):
+                        draw_winning_lines()
+                        game_over = True
+                        pygame.mixer.Sound.play(game_win_sound) if sound_on else None
+                    else:
+                        player = player % 2 + 1  # Switch to the other player
+                        pygame.mixer.Sound.play(random.choice(move_sounds)) if sound_on else None
+                        draw_turn_label(player, game_over)
+                    pygame.display.update()
 
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_r:
+                    if game_over or is_board_full():
+                        player = 0 if is_board_full() else player  # Set player to 0 in case of a tie
+                        draw_turn_label(player, game_over)
+                        restart_button_rect = draw_restart_button(turn_label_width)
+                        pygame.display.update()
+
+            elif event.type == pygame.MOUSEBUTTONDOWN and game_over:
+                if restart_button_rect.collidepoint(event.pos):
                     restart()
                     player = 1
                     game_over = False
-                elif event.key == pygame.K_h:
-                    game_state = HOME
+                    draw_turn_label(player, game_over)
+                    pygame.display.update()
 
-            # Button hover effect
-            if restart_button.collidepoint(pygame.mouse.get_pos()):
-                pygame.draw.rect(screen, BUTTON_HOVER_COLOR, restart_button)
-                screen.blit(reload_icon, (restart_button.x, restart_button.y))
-
-            # CPU move logic
-            if cpu_mode and player == 2 and not game_over:
-                print("CPU is making a move...")
-                if ai_move():
-                    game_over = True
-                else:
-                    player = 1
-
-    if game_over:
-        draw_winning_lines()
-
+    if game_state == GAME:
+        update_particles()
+        pygame.display.update()
     pygame.display.update()
+
+pygame.quit()
+sys.exit()
