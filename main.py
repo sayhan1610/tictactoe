@@ -1,290 +1,514 @@
+# MIT License
+# Copyright (c) 2024 Sayhan16160
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+
 import pygame
 import sys
+import numpy as np
 import random
+import time
 
 pygame.init()
 
-# Game Constants
+# Constants
 WIDTH, HEIGHT = 600, 600
-SQUARE_SIZE = WIDTH // 3
 LINE_WIDTH = 15
+WIN_LINE_WIDTH = 15
+BOARD_ROWS = 3
+BOARD_COLS = 3
+SQUARE_SIZE = WIDTH // BOARD_COLS
 CIRCLE_RADIUS = SQUARE_SIZE // 3
 CIRCLE_WIDTH = 15
 CROSS_WIDTH = 25
 SPACE = SQUARE_SIZE // 4
-WIN_LINE_WIDTH = 15
-PARTICLE_COUNT = 20
-PARTICLE_SPEED = 5
-HOME = 0
-INSTRUCTIONS = 1
-SETTINGS = 2
-GAME = 3
-CPU_MOVE_DELAY = 500  # milliseconds
+FONT = pygame.font.SysFont(None, 60)
+ICON_SIZE = 30
+BUTTON_WIDTH, BUTTON_HEIGHT = 400, 60
+CPU_MOVE_DELAY = 50  # Delay in milliseconds for CPU moves
+
+# Default Settings
+sound_on = True
+theme_color = (0, 0, 0)          # Default Black
+difficulty_level = 10            # Default difficulty level is 10
 
 # Colors
-BG_COLOR = (28, 170, 156)
-LINE_COLOR = (23, 145, 135)
-CIRCLE_COLOR = (239, 231, 200)
-CROSS_COLOR = (66, 66, 66)
-PARTICLE_COLOR = (255, 255, 255)
+BG_COLOR = (0, 0, 0)  # Default Background Color (Black)
+LINE_COLOR = (255, 255, 255)     # White
+CIRCLE_COLOR = (255, 182, 193)   # Baby Pink
+CROSS_COLOR = (0, 255, 255)      # Cyan
+WIN_COLOR = (255, 255, 0)        # Yellow
+TEXT_COLOR = (255, 255, 255)     # White
+BUTTON_COLOR = (128, 128, 128)   # Gray
+BUTTON_HOVER_COLOR = (170, 170, 170)  # Lighter Gray
+BUTTON_BORDER_COLOR = (255, 255, 255) # White
 
-# Font
-FONT = pygame.font.SysFont(None, 60)
-
-# Initialize game variables
-board = [[0 for _ in range(3)] for _ in range(3)]
-particles = []
-player = 1
-game_over = False
-sound_on = True
-cpu_mode = False
-game_state = HOME
-restart_button_rect = None
-
-# Set up the display
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
+# Initialize screen
+screen = pygame.display.set_mode((WIDTH, HEIGHT + 100))
 pygame.display.set_caption('Tic Tac Toe')
 
-# Load sounds
-move_sounds = [
-    pygame.mixer.Sound('audio/move1.mp3'),
-    pygame.mixer.Sound('audio/move2.mp3'),
-    pygame.mixer.Sound('audio/move3.mp3'),
-    pygame.mixer.Sound('audio/move4.mp3')
-]
-game_win_sound = pygame.mixer.Sound('audio/game_win.mp3')
+# Load and scale reload icon
+reload_icon = pygame.image.load("reload_icon.png")  # Replace with the path to your reload icon
+reload_icon = pygame.transform.scale(reload_icon, (ICON_SIZE, ICON_SIZE))
 
+# Load sounds
+bg_music = pygame.mixer.Sound('audio/bg_music.mp3')
+game_start_sound = pygame.mixer.Sound('audio/game_start.mp3')
+game_win_sound = pygame.mixer.Sound('audio/game_win.mp3')
+move_sounds = [pygame.mixer.Sound(f'audio/move{i}.mp3') for i in range(1, 5)]
+
+# Play background music
+bg_music.play(loops=-1) if sound_on else None
+
+# Game states
+HOME = "home"
+INSTRUCTIONS = "instructions"
+SETTINGS = "settings"
+GAME = "game"
+game_state = HOME
+cpu_mode = False
+
+# Global variable for winning lines
+winning_lines = []
+
+# Board
+board = np.zeros((BOARD_ROWS, BOARD_COLS))
+
+# Particle class
+class Particle:
+    def __init__(self, x, y, color, speed, angle):
+        self.x = x
+        self.y = y
+        self.color = color
+        self.speed = speed
+        self.angle = angle
+        self.life = 100  # Particle life in frames
+
+    def update(self):
+        self.x += self.speed * np.cos(self.angle)
+        self.y += self.speed * np.sin(self.angle)
+        self.life -= 2  # Decrease life
+        self.speed *= 0.95  # Slow down over time
+
+    def draw(self, screen):
+        if self.life > 0:
+            pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), 5)
+
+# Adding the particle effect on victory
+def create_particles(x, y, color, num_particles=30):
+    particles = []
+    for _ in range(num_particles):
+        angle = random.uniform(0, 2 * np.pi)
+        speed = random.uniform(2, 7)
+        particles.append(Particle(x, y, color, speed, angle))
+    return particles
+
+def update_particles():
+    for particle in particles:
+        particle.update()
+        particle.draw(screen)
+
+# Functions for the game
 def draw_lines():
-    # Drawing the lines on the board
-    for i in range(1, 3):
-        pygame.draw.line(screen, LINE_COLOR, (0, SQUARE_SIZE * i), (WIDTH, SQUARE_SIZE * i), LINE_WIDTH)
-        pygame.draw.line(screen, LINE_COLOR, (SQUARE_SIZE * i, 0), (SQUARE_SIZE * i, HEIGHT), LINE_WIDTH)
+    for row in range(1, BOARD_ROWS):
+        pygame.draw.line(screen, LINE_COLOR, (0, row * SQUARE_SIZE), (WIDTH, row * SQUARE_SIZE), LINE_WIDTH)
+        pygame.draw.line(screen, LINE_COLOR, (row * SQUARE_SIZE, 0), (row * SQUARE_SIZE, HEIGHT), LINE_WIDTH)
 
 def draw_figures():
-    for row in range(3):
-        for col in range(3):
+    for row in range(BOARD_ROWS):
+        for col in range(BOARD_COLS):
             if board[row][col] == 1:
-                pygame.draw.circle(screen, CIRCLE_COLOR, (int(col * SQUARE_SIZE + SQUARE_SIZE // 2), int(row * SQUARE_SIZE + SQUARE_SIZE // 2)), CIRCLE_RADIUS, CIRCLE_WIDTH)
+                pygame.draw.circle(screen, CIRCLE_COLOR, (col * SQUARE_SIZE + SQUARE_SIZE // 2, row * SQUARE_SIZE + SQUARE_SIZE // 2), CIRCLE_RADIUS, CIRCLE_WIDTH)
             elif board[row][col] == 2:
-                pygame.draw.line(screen, CROSS_COLOR, 
-                                 (col * SQUARE_SIZE + SPACE, row * SQUARE_SIZE + SQUARE_SIZE - SPACE),
-                                 (col * SQUARE_SIZE + SQUARE_SIZE - SPACE, row * SQUARE_SIZE + SPACE),
-                                 CROSS_WIDTH)
-                pygame.draw.line(screen, CROSS_COLOR, 
-                                 (col * SQUARE_SIZE + SPACE, row * SQUARE_SIZE + SPACE),
-                                 (col * SQUARE_SIZE + SQUARE_SIZE - SPACE, row * SQUARE_SIZE + SQUARE_SIZE - SPACE),
-                                 CROSS_WIDTH)
-
-def available_square(row, col):
-    return board[row][col] == 0
+                pygame.draw.line(screen, CROSS_COLOR, (col * SQUARE_SIZE + SPACE, row * SQUARE_SIZE + SQUARE_SIZE - SPACE),
+                                 (col * SQUARE_SIZE + SQUARE_SIZE - SPACE, row * SQUARE_SIZE + SPACE), CROSS_WIDTH)
+                pygame.draw.line(screen, CROSS_COLOR, (col * SQUARE_SIZE + SPACE, row * SQUARE_SIZE + SPACE),
+                                 (col * SQUARE_SIZE + SQUARE_SIZE - SPACE, row * SQUARE_SIZE + SQUARE_SIZE - SPACE), CROSS_WIDTH)
 
 def mark_square(row, col, player):
     board[row][col] = player
 
+def available_square(row, col):
+    return board[row][col] == 0
+
+def is_board_full():
+    return np.all(board != 0)
+
 def check_win(player):
-    # Check for winning combinations
-    for col in range(3):
-        if board[0][col] == player and board[1][col] == player and board[2][col] == player:
-            draw_vertical_winning_line(col, player)
-            return True
-
-    for row in range(3):
-        if board[row][0] == player and board[row][1] == player and board[row][2] == player:
-            draw_horizontal_winning_line(row, player)
-            return True
-
-    if board[0][0] == player and board[1][1] == player and board[2][2] == player:
-        draw_desc_diagonal(player)
-        return True
-
-    if board[2][0] == player and board[1][1] == player and board[0][2] == player:
-        draw_asc_diagonal(player)
-        return True
-
-    return False
+    global winning_lines
+    winning_lines = []  # Reset winning lines each time
+    # Vertical, Horizontal & Diagonal Win Check
+    for col in range(BOARD_COLS):
+        if np.all(board[:, col] == player):
+            winning_lines.append(('vertical', col))
+    for row in range(BOARD_ROWS):
+        if np.all(board[row, :] == player):
+            winning_lines.append(('horizontal', row))
+    if np.all(np.diag(board) == player):
+        winning_lines.append('desc_diagonal')
+    if np.all(np.diag(np.fliplr(board)) == player):
+        winning_lines.append('asc_diagonal')
+    return len(winning_lines) > 0
 
 def draw_vertical_winning_line(col, player):
     posX = col * SQUARE_SIZE + SQUARE_SIZE // 2
-    color = CIRCLE_COLOR if player == 1 else CROSS_COLOR
-    pygame.draw.line(screen, color, (posX, 15), (posX, HEIGHT - 15), WIN_LINE_WIDTH)
+    pygame.draw.line(screen, WIN_COLOR, (posX, 15), (posX, HEIGHT - 15), WIN_LINE_WIDTH)
 
 def draw_horizontal_winning_line(row, player):
     posY = row * SQUARE_SIZE + SQUARE_SIZE // 2
-    color = CIRCLE_COLOR if player == 1 else CROSS_COLOR
-    pygame.draw.line(screen, color, (15, posY), (WIDTH - 15, posY), WIN_LINE_WIDTH)
+    pygame.draw.line(screen, WIN_COLOR, (15, posY), (WIDTH - 15, posY), WIN_LINE_WIDTH)
 
 def draw_asc_diagonal(player):
-    color = CIRCLE_COLOR if player == 1 else CROSS_COLOR
-    pygame.draw.line(screen, color, (15, HEIGHT - 15), (WIDTH - 15, 15), WIN_LINE_WIDTH)
+    pygame.draw.line(screen, WIN_COLOR, (15, HEIGHT - 15), (WIDTH - 15, 15), WIN_LINE_WIDTH)
 
 def draw_desc_diagonal(player):
-    color = CIRCLE_COLOR if player == 1 else CROSS_COLOR
-    pygame.draw.line(screen, color, (15, 15), (WIDTH - 15, HEIGHT - 15), WIN_LINE_WIDTH)
+    pygame.draw.line(screen, WIN_COLOR, (15, 15), (WIDTH - 15, HEIGHT - 15), WIN_LINE_WIDTH)
 
-def restart():
-    global board, particles, player, game_over
-    screen.fill(BG_COLOR)
-    draw_lines()
-    player = 1
-    game_over = False
-    board = [[0 for _ in range(3)] for _ in range(3)]
-    particles = []
-
-def update_particles():
-    for particle in particles[:]:
-        particle[0] += particle[2]
-        particle[1] += particle[3]
-        particle[2] *= 0.95  # Damping
-        particle[3] *= 0.95  # Damping
-        particle[3] += 0.5  # Gravity
-        if particle[0] > WIDTH or particle[0] < 0 or particle[1] > HEIGHT or particle[1] < 0:
-            particles.remove(particle)
-        else:
-            pygame.draw.circle(screen, PARTICLE_COLOR, (int(particle[0]), int(particle[1])), 3)
-
-def create_particles(x, y):
-    for _ in range(PARTICLE_COUNT):
-        particles.append([x, y, random.uniform(-PARTICLE_SPEED, PARTICLE_SPEED), random.uniform(-PARTICLE_SPEED, PARTICLE_SPEED)])
+def draw_winning_lines():
+    global particles
+    for line in winning_lines:
+        if line[0] == 'vertical':
+            draw_vertical_winning_line(line[1], player)
+            particles = create_particles(line[1] * SQUARE_SIZE + SQUARE_SIZE // 2, HEIGHT // 2, WIN_COLOR)
+        elif line[0] == 'horizontal':
+            draw_horizontal_winning_line(line[1], player)
+            particles = create_particles(WIDTH // 2, line[1] * SQUARE_SIZE + SQUARE_SIZE // 2, WIN_COLOR)
+        elif line == 'desc_diagonal':
+            draw_desc_diagonal(player)
+            particles = create_particles(WIDTH // 2, HEIGHT // 2, WIN_COLOR)
+        elif line == 'asc_diagonal':
+            draw_asc_diagonal(player)
+            particles = create_particles(WIDTH // 2, HEIGHT // 2, WIN_COLOR)
 
 def draw_turn_label(player, game_over):
-    label = "Player 1" if player == 1 else "Player 2"
     if game_over:
-        label = "Game Over"
-    text = FONT.render(label, True, (255, 255, 255))
-    text_rect = text.get_rect(center=(WIDTH//2, HEIGHT//2 + SQUARE_SIZE*1.5))
-    screen.blit(text, text_rect)
-    return text_rect.width
+        if player == 0:
+            turn_text = "It's a Tie!"
+        else:
+            turn_text = f"Player {player} Wins!"
+    else:
+        turn_text = "Player 1's (O) Turn" if player == 1 else "Player 2's (X) Turn"
+    
+    label = FONT.render(turn_text, True, TEXT_COLOR)
+    screen.fill(BG_COLOR, (0, HEIGHT, WIDTH, 100))  # Clear previous label
+    screen.blit(label, (WIDTH // 2 - label.get_width() // 2, HEIGHT + 20))
+    return label.get_width() // 2
+
+def restart():
+    global winning_lines, particles
+    screen.fill(BG_COLOR)
+    draw_lines()
+    board.fill(0)
+    winning_lines = []
+    particles = []
 
 def draw_restart_button(turn_label_width):
-    restart_label = "Restart"
-    text = FONT.render(restart_label, True, (255, 255, 255))
-    text_rect = text.get_rect(center=(WIDTH//2, HEIGHT//2 + SQUARE_SIZE*2))
-    pygame.draw.rect(screen, BG_COLOR, text_rect.inflate(20, 10))
-    screen.blit(text, text_rect)
-    return text_rect
+    button_x = (WIDTH // 2) + turn_label_width + 20  # Position it beside the turn label
+    button_rect = pygame.Rect(button_x, HEIGHT + 25, ICON_SIZE, ICON_SIZE)
+    screen.blit(reload_icon, (button_x, HEIGHT + 25))
+    return button_rect
 
-# Implement the Home, Instructions, and Settings screens similarly
-def draw_home():
-    # Placeholder implementation for the Home screen
+def draw_home_page():
     screen.fill(BG_COLOR)
-    play_button = pygame.Rect(WIDTH // 4, HEIGHT // 4, WIDTH // 2, 100)
-    instructions_button = pygame.Rect(WIDTH // 4, HEIGHT // 2, WIDTH // 2, 100)
-    settings_button = pygame.Rect(WIDTH // 4, 3 * HEIGHT // 4, WIDTH // 2, 100)
-    pygame.draw.rect(screen, (100, 100, 100), play_button)
-    pygame.draw.rect(screen, (100, 100, 100), instructions_button)
-    pygame.draw.rect(screen, (100, 100, 100), settings_button)
-    return play_button, instructions_button, settings_button
+    title = FONT.render("Tic Tac Toe", True, TEXT_COLOR)
+    title_rect = title.get_rect(center=(WIDTH // 2, HEIGHT // 4))
+    screen.blit(title, title_rect)
 
-def draw_instructions():
-    # Placeholder implementation for the Instructions screen
+    buttons = [
+        ("Player vs Player", (WIDTH // 2, HEIGHT // 2 - 50)),
+        ("Player vs CPU", (WIDTH // 2, HEIGHT // 2 + 50)),
+        ("Settings", (WIDTH // 2, HEIGHT // 2 + 150)),
+        ("Instructions", (WIDTH // 2, HEIGHT // 2 + 250))
+    ]
+    
+    button_rects = []
+    for text, pos in buttons:
+        rect = draw_button(text, pos)
+        button_rects.append(rect)
+
+    return button_rects
+
+def draw_button(text, position):
+    button_rect = pygame.Rect(0, 0, BUTTON_WIDTH, BUTTON_HEIGHT)
+    button_rect.center = position
+    
+    pygame.draw.rect(screen, BUTTON_COLOR, button_rect, border_radius=5)
+    pygame.draw.rect(screen, BUTTON_BORDER_COLOR, button_rect, 2, border_radius=5)
+    
+    label = FONT.render(text, True, TEXT_COLOR)
+    label_rect = label.get_rect(center=position)
+    screen.blit(label, label_rect)
+    
+    return button_rect
+
+def draw_instructions_page():
     screen.fill(BG_COLOR)
-    back_button = pygame.Rect(WIDTH // 4, 3 * HEIGHT // 4, WIDTH // 2, 100)
-    pygame.draw.rect(screen, (100, 100, 100), back_button)
+    instructions = [
+        "How to Play:",
+        "1. Player 1 is O and Player 2 is X.",
+        "2. Players take turns to place their symbol on the grid.",
+        "3. The first player to align 3 symbols vertically, horizontally, or diagonally wins.",
+        "4. If the grid is filled and no one wins, the game is a tie.",
+        "5. In CPU mode, the CPU makes the second move as Player 2 (X).",
+        "6. You can adjust the difficulty level in the settings.",
+    ]
+    y_offset = HEIGHT // 4
+    for line in instructions:
+        instruction_text = FONT.render(line, True, TEXT_COLOR)
+        screen.blit(instruction_text, (WIDTH // 2 - instruction_text.get_width() // 2, y_offset))
+        y_offset += 40
+    
+    back_button = draw_button("Back", (WIDTH // 2, HEIGHT // 2 + 250))
+    
     return back_button
 
-def draw_settings():
-    # Placeholder implementation for the Settings screen
+def draw_settings_page():
+    global sound_on, theme_color, difficulty_level
+    
     screen.fill(BG_COLOR)
-    sound_button = pygame.Rect(WIDTH // 4, HEIGHT // 4, WIDTH // 2, 100)
-    color_button = pygame.Rect(WIDTH // 4, HEIGHT // 2, WIDTH // 2, 100)
-    pygame.draw.rect(screen, (100, 100, 100), sound_button)
-    pygame.draw.rect(screen, (100, 100, 100), color_button)
-    return sound_button, color_button
+    settings = [
+        f"Sound: {'On' if sound_on else 'Off'}",
+        f"Difficulty Level: {difficulty_level}",
+        f"Theme Color: {'Black' if theme_color == (0, 0, 0) else 'Blue'}",
+    ]
+    
+    button_rects = []
+    y_offset = HEIGHT // 4
+    
+    for line in settings:
+        setting_text = FONT.render(line, True, TEXT_COLOR)
+        screen.blit(setting_text, (WIDTH // 2 - setting_text.get_width() // 2, y_offset))
+        y_offset += 40
 
-def handle_home_click(pos):
-    global game_state
-    if play_button.collidepoint(pos):
-        game_state = GAME
-        restart()
-    elif instructions_button.collidepoint(pos):
-        game_state = INSTRUCTIONS
-    elif settings_button.collidepoint(pos):
-        game_state = SETTINGS
+    buttons = [
+        ("Toggle Sound", (WIDTH // 2, HEIGHT // 2)),
+        ("Difficulty Level", (WIDTH // 2, HEIGHT // 2 + 100)),
+        ("Theme Color", (WIDTH // 2, HEIGHT // 2 + 200)),
+        ("Back", (WIDTH // 2, HEIGHT // 2 + 300))
+    ]
+    
+    for text, pos in buttons:
+        rect = draw_button(text, pos)
+        button_rects.append(rect)
+    
+    return button_rects
 
-def handle_instructions_click(pos):
-    global game_state
-    if back_button.collidepoint(pos):
-        game_state = HOME
+def cpu_turn():
+    # Easy difficulty: Random move
+    if difficulty_level <= 3:
+        available = [(r, c) for r in range(BOARD_ROWS) for c in range(BOARD_COLS) if available_square(r, c)]
+        return random.choice(available)
 
-def handle_settings_click(pos):
-    global sound_on, cpu_mode
-    if sound_button.collidepoint(pos):
-        sound_on = not sound_on
-    elif color_button.collidepoint(pos):
-        cpu_mode = not cpu_mode
+    # Medium difficulty: Prioritize blocking or winning
+    if difficulty_level <= 6:
+        for r in range(BOARD_ROWS):
+            for c in range(BOARD_COLS):
+                if available_square(r, c):
+                    # Check if the CPU can win
+                    board[r][c] = 2
+                    if check_win(2):
+                        return (r, c)
+                    # Check if the player can win
+                    board[r][c] = 1
+                    if check_win(1):
+                        return (r, c)
+                    board[r][c] = 0
+        return random.choice(available)
 
+    # Hard difficulty: Optimal move
+    if difficulty_level <= 9:
+        best_score = -float('inf')
+        best_move = None
+        for r in range(BOARD_ROWS):
+            for c in range(BOARD_COLS):
+                if available_square(r, c):
+                    board[r][c] = 2
+                    score = minimax(board, False)
+                    board[r][c] = 0
+                    if score > best_score:
+                        best_score = score
+                        best_move = (r, c)
+        return best_move
+
+    # Impossible difficulty (same as before)
+    return minimax_best_move()
+
+def minimax(board, is_maximizing):
+    if check_win(2):
+        return 1
+    elif check_win(1):
+        return -1
+    elif is_board_full():
+        return 0
+
+    if is_maximizing:
+        best_score = -float('inf')
+        for r in range(BOARD_ROWS):
+            for c in range(BOARD_COLS):
+                if available_square(r, c):
+                    board[r][c] = 2
+                    score = minimax(board, False)
+                    board[r][c] = 0
+                    best_score = max(score, best_score)
+        return best_score
+    else:
+        best_score = float('inf')
+        for r in range(BOARD_ROWS):
+            for c in range(BOARD_COLS):
+                if available_square(r, c):
+                    board[r][c] = 1
+                    score = minimax(board, True)
+                    board[r][c] = 0
+                    best_score = min(score, best_score)
+        return best_score
+
+def minimax_best_move():
+    best_score = -float('inf')
+    best_move = None
+    for r in range(BOARD_ROWS):
+        for c in range(BOARD_COLS):
+            if available_square(r, c):
+                board[r][c] = 2
+                score = minimax(board, False)
+                board[r][c] = 0
+                if score > best_score:
+                    best_score = score
+                    best_move = (r, c)
+    return best_move
+
+# Main loop
 player = 1
 game_over = False
 particles = []
-restart_button_rect = None
+cpu_turn_pending = False  # Indicates if the CPU move is pending
 
 while True:
-    if game_state == HOME:
-        play_button, instructions_button, settings_button = draw_home()
-
-    elif game_state == INSTRUCTIONS:
-        back_button = draw_instructions()
-
-    elif game_state == SETTINGS:
-        sound_button, color_button = draw_settings()
-
-    elif game_state == GAME:
-        draw_turn_label(player, game_over)
-        draw_figures()
-        draw_winning_lines()
-        update_particles()
-
-        if game_over and not cpu_mode:
-            turn_label_width = draw_turn_label(0, game_over)
-            restart_button_rect = draw_restart_button(turn_label_width)  # Define the button
-
-    pygame.display.update()
-
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                if game_state in [INSTRUCTIONS, SETTINGS]:
-                    game_state = HOME
-                elif game_state == GAME:
-                    game_state = HOME  # Or we could implement a pause feature
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            pos = event.pos
 
-            if game_state == HOME:
-                handle_home_click(pos)
-            elif game_state == INSTRUCTIONS:
-                handle_instructions_click(pos)
-            elif game_state == SETTINGS:
-                handle_settings_click(pos)
-            elif game_state == GAME and not game_over:
-                if event.button == 1:
-                    row = pos[1] // SQUARE_SIZE
-                    col = pos[0] // SQUARE_SIZE
+        if event.type == pygame.MOUSEBUTTONDOWN and not game_over and game_state == GAME:
+            mouseX = event.pos[0]
+            mouseY = event.pos[1]
+            clicked_row = int(mouseY // SQUARE_SIZE)
+            clicked_col = int(mouseX // SQUARE_SIZE)
 
-                    if available_square(row, col):
+            if available_square(clicked_row, clicked_col):
+                mark_square(clicked_row, clicked_col, player)
+                if sound_on:
+                    move_sounds[player - 1].play()
+
+                if check_win(player):
+                    game_over = True
+                    draw_winning_lines()
+                    if sound_on:
+                        game_win_sound.play()
+                elif is_board_full():
+                    game_over = True
+
+                player = 2 if player == 1 else 1
+
+        elif event.type == pygame.MOUSEBUTTONDOWN and game_state == HOME:
+            mouseX, mouseY = event.pos
+            for idx, rect in enumerate(home_buttons):
+                if rect.collidepoint(mouseX, mouseY):
+                    if idx == 0:
+                        game_state = GAME
+                    elif idx == 1:
+                        game_state = GAME
+                        cpu_mode = True
+                    elif idx == 2:
+                        game_state = SETTINGS
+                    elif idx == 3:
+                        game_state = INSTRUCTIONS
+                    restart()
+
+        elif event.type == pygame.MOUSEBUTTONDOWN and game_state == INSTRUCTIONS:
+            mouseX, mouseY = event.pos
+            if instructions_back_button.collidepoint(mouseX, mouseY):
+                game_state = HOME
+
+        elif event.type == pygame.MOUSEBUTTONDOWN and game_state == SETTINGS:
+            mouseX, mouseY = event.pos
+            for idx, rect in enumerate(settings_buttons):
+                if rect.collidepoint(mouseX, mouseY):
+                    if idx == 0:
+                        sound_on = not sound_on
                         if sound_on:
-                            move_sounds[random.randint(0, 3)].play()
-                        mark_square(row, col, player)
-                        if check_win(player):
-                            game_over = True
-                            game_win_sound.play() if sound_on else None
-                        player = 2 if player == 1 else 1
+                            bg_music.play(loops=-1)
+                        else:
+                            bg_music.stop()
+                    elif idx == 1:
+                        difficulty_level += 1
+                        if difficulty_level > 10:
+                            difficulty_level = 1
+                    elif idx == 2:
+                        if theme_color == (0, 0, 0):
+                            theme_color = (0, 0, 255)  # Blue
+                        else:
+                            theme_color = (0, 0, 0)  # Black
+                    elif idx == 3:
+                        game_state = HOME
+                    restart()
 
-                    if player == 2 and cpu_mode and not game_over:
-                        pygame.time.wait(CPU_MOVE_DELAY)
-                        cpu_move()
-                        if check_win(2):
-                            game_over = True
-                            game_win_sound.play() if sound_on else None
-                        player = 1
+        elif event.type == pygame.MOUSEBUTTONDOWN and game_state == GAME:
+            if restart_button_rect and restart_button_rect.collidepoint(event.pos):
+                restart()
+                game_over = False
+                player = 1
+                cpu_turn_pending = False
 
-                # Restart button
-                if game_over and restart_button_rect is not None:
-                    if restart_button_rect.collidepoint(pos):
-                        restart()
-                        player = 1
-                        game_over = False
-                        restart_button_rect = None  # Reset button rect
+    if game_state == GAME:
+        if cpu_mode and player == 2 and not game_over:
+            cpu_turn_pending = True
+
+    screen.fill(BG_COLOR)
+    if game_state == HOME:
+        home_buttons = draw_home_page()
+    elif game_state == INSTRUCTIONS:
+        instructions_back_button = draw_instructions_page()
+    elif game_state == SETTINGS:
+        settings_buttons = draw_settings_page()
+    elif game_state == GAME:
+        draw_lines()
+        draw_figures()
+
+        if cpu_mode and player == 2 and not game_over and cpu_turn_pending:
+            pygame.time.wait(500)  # Adds a delay to mimic thinking
+            move = cpu_turn()
+            mark_square(move[0], move[1], 2)
+            if sound_on:
+                move_sounds[1].play()
+
+            if check_win(2):
+                game_over = True
+                draw_winning_lines()
+                if sound_on:
+                    game_win_sound.play()
+            elif is_board_full():
+                game_over = True
+
+            player = 1
+            cpu_turn_pending = False
+
+        if game_over:
+            restart_button_rect = draw_button("Restart", (WIDTH // 2, HEIGHT // 2 + 50))
+
+    pygame.display.update()
